@@ -2,6 +2,7 @@
 WiFi Sense — Flask API Server
 ===============================
 Serves the dashboard and provides API endpoints for:
+- 3D Radar visualization (motion detection)
 - Room detection status
 - WiFi signal data
 - Device tracking
@@ -31,6 +32,7 @@ from ml.fingerprint import (
 )
 from ml.model import train_model, is_model_trained
 from ml.predictor import RoomPredictor
+from scanner.motion_detector import MotionDetector
 
 # ─── Flask App ───────────────────────────────────────────────────
 app = Flask(__name__, static_folder=None)
@@ -38,9 +40,11 @@ CORS(app)
 
 # ─── Global State ────────────────────────────────────────────────
 predictor = RoomPredictor()
+motion_detector = MotionDetector()
 latest_scan = {"networks": [], "timestamp": 0}
 latest_devices = {"devices": [], "timestamp": 0}
 latest_prediction = {"room_id": None, "confidence": 0, "probabilities": {}}
+latest_radar = {}
 calibration_state = {"active": False, "room_id": None, "progress": 0, "done": False}
 scan_thread = None
 scan_running = False
@@ -60,6 +64,34 @@ def serve_dashboard():
 def serve_static(filename):
     """Serve static files from dashboard directory."""
     return send_from_directory(config.DASHBOARD_DIR, filename)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  3D RADAR API
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/radar')
+def api_radar():
+    """Get 3D radar data — motion detection + signal data."""
+    return jsonify(latest_radar if latest_radar else {
+        "motion_detected": False,
+        "presence_detected": False,
+        "motion_intensity": 0,
+        "detection_confidence": 0,
+        "person_position": {"x": 0, "z": 0},
+        "signal_data": [],
+        "scan_count": 0,
+        "baseline_ready": False,
+        "num_networks": 0,
+        "timestamp": 0,
+    })
+
+
+@app.route('/api/radar/reset', methods=['POST'])
+def api_radar_reset():
+    """Reset motion detector baseline."""
+    motion_detector.reset_baseline()
+    return jsonify({"success": True, "message": "Baseline reset"})
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -232,8 +264,8 @@ def _run_calibration(room_id: str):
 
 
 def _scan_loop():
-    """Background loop for continuous WiFi scanning and prediction."""
-    global latest_scan, latest_prediction, latest_devices, scan_running
+    """Background loop for continuous WiFi scanning, motion detection, and prediction."""
+    global latest_scan, latest_prediction, latest_devices, latest_radar, scan_running
     
     device_scan_counter = 0
     
@@ -250,6 +282,10 @@ def _scan_loop():
                 "networks": networks,
                 "timestamp": time.time(),
             }
+            
+            # Motion detection (3D Radar)
+            radar_result = motion_detector.process_scan(networks)
+            latest_radar = radar_result
             
             # Predict room (if model is loaded)
             if predictor.model is not None:
@@ -302,7 +338,7 @@ def main():
     """Start the WiFi Sense server."""
     print()
     print("  ╔═══════════════════════════════════════════════╗")
-    print("  ║     📡 WiFi Sense — Room Detection System     ║")
+    print("  ║     📡 WiFi Sense — 3D Radar System           ║")
     print("  ╠═══════════════════════════════════════════════╣")
     print(f"  ║  Dashboard: http://localhost:{config.SERVER_PORT}            ║")
     print("  ║  Press Ctrl+C to stop                        ║")

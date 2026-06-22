@@ -3,196 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="WiFi Sensing System — Real-time human presence detection and room localization using WiFi signals">
-    <title>WiFi Sense — Room Detection Dashboard</title>
+    <meta name="description" content="WiFi Sense 3D Radar — Real-time human detection through WiFi signals">
+    <title>WiFi Sense — 3D Radar</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
-    <!-- Animated Background -->
-    <div class="bg-grid"></div>
-    <div class="bg-glow bg-glow-1"></div>
-    <div class="bg-glow bg-glow-2"></div>
-    <div class="bg-glow bg-glow-3"></div>
+    <!-- 3D Canvas -->
+    <canvas id="radar-canvas"></canvas>
 
-    <!-- Header -->
-    <header class="header" id="main-header">
-        <div class="header-left">
-            <div class="logo">
-                <div class="logo-icon">
-                    <div class="signal-wave wave-1"></div>
-                    <div class="signal-wave wave-2"></div>
-                    <div class="signal-wave wave-3"></div>
-                    <div class="signal-dot"></div>
+    <!-- Top HUD Bar -->
+    <header class="hud-header" id="hud-header">
+        <div class="hud-left">
+            <div class="hud-logo">
+                <div class="radar-icon-mini">
+                    <div class="sweep-mini"></div>
                 </div>
-                <div class="logo-text">
-                    <h1>WiFi Sense</h1>
-                    <span class="logo-subtitle">Room Detection System</span>
+                <div class="hud-title">
+                    <h1>WIFI SENSE</h1>
+                    <span>3D RADAR SYSTEM</span>
                 </div>
             </div>
         </div>
-        <div class="header-right">
-            <div class="status-indicator" id="connection-status">
-                <div class="status-dot"></div>
-                <span>Connecting...</span>
+        <div class="hud-center">
+            <div class="hud-stat" id="stat-status">
+                <div class="stat-indicator" id="detection-indicator"></div>
+                <div class="stat-text">
+                    <span class="stat-label">STATUS</span>
+                    <span class="stat-value" id="status-text">INITIALIZING</span>
+                </div>
             </div>
-            <button class="btn btn-icon" id="btn-settings" title="Settings">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-                </svg>
-            </button>
+            <div class="hud-stat">
+                <span class="stat-label">INTENSITY</span>
+                <div class="intensity-bar">
+                    <div class="intensity-fill" id="intensity-fill"></div>
+                </div>
+                <span class="stat-value-sm" id="intensity-value">0%</span>
+            </div>
+            <div class="hud-stat">
+                <span class="stat-label">CONFIDENCE</span>
+                <span class="stat-value" id="confidence-text">—</span>
+            </div>
+            <div class="hud-stat">
+                <span class="stat-label">NETWORKS</span>
+                <span class="stat-value" id="networks-text">0</span>
+            </div>
+        </div>
+        <div class="hud-right">
+            <div class="hud-connection" id="connection-status">
+                <div class="conn-dot"></div>
+                <span>CONNECTING</span>
+            </div>
         </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="main-content">
-        <!-- Top Stats Bar -->
-        <section class="stats-bar" id="stats-section">
-            <div class="stat-card glass" id="stat-current-room">
-                <div class="stat-icon">📍</div>
-                <div class="stat-info">
-                    <div class="stat-label">Current Room</div>
-                    <div class="stat-value" id="current-room-name">Scanning...</div>
-                </div>
-            </div>
-            <div class="stat-card glass" id="stat-confidence">
-                <div class="stat-icon">🎯</div>
-                <div class="stat-info">
-                    <div class="stat-label">Confidence</div>
-                    <div class="stat-value" id="confidence-value">—</div>
-                </div>
-            </div>
-            <div class="stat-card glass" id="stat-devices">
-                <div class="stat-icon">📱</div>
-                <div class="stat-info">
-                    <div class="stat-label">Devices Online</div>
-                    <div class="stat-value" id="devices-count">0</div>
-                </div>
-            </div>
-            <div class="stat-card glass" id="stat-networks">
-                <div class="stat-icon">📡</div>
-                <div class="stat-info">
-                    <div class="stat-label">WiFi Networks</div>
-                    <div class="stat-value" id="networks-count">0</div>
-                </div>
-            </div>
-        </section>
+    <!-- Left Panel — Signal Monitor -->
+    <aside class="side-panel left-panel" id="signal-panel">
+        <div class="panel-header">
+            <h3>📶 SIGNAL MONITOR</h3>
+            <span class="panel-badge" id="ap-count">0 APs</span>
+        </div>
+        <div class="signal-list" id="signal-list">
+            <!-- Dynamic signal items -->
+        </div>
+    </aside>
 
-        <!-- Main Grid -->
-        <div class="content-grid">
-            <!-- Floor Plan / Room Map -->
-            <section class="card glass floor-plan-card" id="floor-plan-section">
-                <div class="card-header">
-                    <h2>🏠 Floor Plan</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="btn-calibrate" title="Calibrate Rooms">
-                            ⚙️ Calibrate
-                        </button>
-                    </div>
-                </div>
-                <div class="floor-plan" id="floor-plan">
-                    <!-- Rooms are dynamically generated -->
-                </div>
-            </section>
-
-            <!-- Right Panel -->
-            <div class="right-panel">
-                <!-- Signal Strength -->
-                <section class="card glass signals-card" id="signals-section">
-                    <div class="card-header">
-                        <h2>📶 Signal Strength</h2>
-                        <span class="badge" id="signal-update-time">Live</span>
-                    </div>
-                    <div class="signals-list" id="signals-list">
-                        <div class="empty-state">
-                            <span class="empty-icon">📡</span>
-                            <p>Scanning for networks...</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Connected Devices -->
-                <section class="card glass devices-card" id="devices-section">
-                    <div class="card-header">
-                        <h2>📱 Connected Devices</h2>
-                        <button class="btn btn-sm btn-ghost" id="btn-refresh-devices">🔄</button>
-                    </div>
-                    <div class="devices-list" id="devices-list">
-                        <div class="empty-state">
-                            <span class="empty-icon">📱</span>
-                            <p>Scanning network...</p>
-                        </div>
-                    </div>
-                </section>
+    <!-- Right Panel — Detection Log -->
+    <aside class="side-panel right-panel" id="detection-panel">
+        <div class="panel-header">
+            <h3>👤 DETECTION LOG</h3>
+        </div>
+        <div class="detection-log" id="detection-log">
+            <div class="log-entry system">
+                <span class="log-time">--:--:--</span>
+                <span class="log-msg">System starting...</span>
             </div>
         </div>
-
-        <!-- Bottom Section -->
-        <div class="bottom-grid">
-            <!-- Room Probabilities -->
-            <section class="card glass probabilities-card" id="probabilities-section">
-                <div class="card-header">
-                    <h2>📊 Room Probabilities</h2>
-                </div>
-                <div class="probabilities-chart" id="probabilities-chart">
-                    <!-- Dynamic bars -->
-                </div>
-            </section>
-
-            <!-- Movement History -->
-            <section class="card glass history-card" id="history-section">
-                <div class="card-header">
-                    <h2>🕐 Movement History</h2>
-                    <span class="badge" id="history-count">0 events</span>
-                </div>
-                <div class="history-timeline" id="history-timeline">
-                    <div class="empty-state">
-                        <span class="empty-icon">🕐</span>
-                        <p>No movement detected yet</p>
-                    </div>
-                </div>
-            </section>
+        <div class="panel-divider"></div>
+        <div class="panel-header">
+            <h3>📊 POSITION</h3>
         </div>
-    </main>
-
-    <!-- Calibration Modal -->
-    <div class="modal-overlay" id="calibrate-modal">
-        <div class="modal glass">
-            <div class="modal-header">
-                <h2>⚙️ Room Calibration</h2>
-                <button class="btn btn-icon modal-close" id="modal-close">&times;</button>
+        <div class="position-display">
+            <div class="mini-radar" id="mini-radar">
+                <div class="mini-radar-dot" id="mini-radar-dot"></div>
+                <div class="mini-radar-cross"></div>
             </div>
-            <div class="modal-body">
-                <p class="modal-description">
-                    Har room mein jaake WiFi signals record karo. Ye system ko sikhayega ke har room mein signals kaise hote hain.
-                </p>
-                <div class="calibration-rooms" id="calibration-rooms">
-                    <!-- Dynamic room calibration cards -->
-                </div>
-                <div class="calibration-progress" id="calibration-progress" style="display:none;">
-                    <div class="progress-info">
-                        <span id="calibration-room-name">Room</span>
-                        <span id="calibration-percent">0%</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="calibration-fill"></div>
-                    </div>
-                    <p class="progress-hint" id="calibration-hint">Scanning WiFi signals...</p>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-primary" id="btn-train-model" style="display:none;">
-                    🧠 Train Model
-                </button>
+            <div class="position-coords">
+                <div><span class="coord-label">X:</span> <span id="pos-x">0.00</span></div>
+                <div><span class="coord-label">Z:</span> <span id="pos-z">0.00</span></div>
             </div>
         </div>
+    </aside>
+
+    <!-- Bottom HUD — Controls -->
+    <footer class="hud-footer" id="hud-footer">
+        <div class="footer-left">
+            <button class="hud-btn" id="btn-reset" title="Reset Baseline">
+                🔄 RESET
+            </button>
+            <button class="hud-btn" id="btn-toggle-waves" title="Toggle Waves">
+                🌊 WAVES
+            </button>
+            <button class="hud-btn" id="btn-toggle-grid" title="Toggle Grid">
+                ⊞ GRID
+            </button>
+        </div>
+        <div class="footer-center">
+            <span class="scan-counter">SCAN #<span id="scan-count">0</span></span>
+            <span class="baseline-status" id="baseline-status">⏳ COLLECTING BASELINE...</span>
+        </div>
+        <div class="footer-right">
+            <span class="fps-counter" id="fps-counter">60 FPS</span>
+        </div>
+    </footer>
+
+    <!-- Fullscreen alert when person detected -->
+    <div class="detection-alert" id="detection-alert">
+        <div class="alert-pulse"></div>
+        <span>👤 PERSON DETECTED</span>
     </div>
-
-    <!-- Toast Notifications -->
-    <div class="toast-container" id="toast-container"></div>
 
     <script src="app.js"></script>
 </body>
