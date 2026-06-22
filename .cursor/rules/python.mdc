@@ -1,0 +1,13 @@
+---
+description: Python and Flask backend development rules
+globs: *.py
+---
+
+# Python and Flask Backend Rules
+
+- Use Python 3.9+ typing where possible.
+- Avoid wildcard imports.
+- Format code cleanly, using clear and descriptive variable names.
+- Ensure all Flask endpoints return standard JSON responses and use appropriate HTTP status codes.
+- Exception handling should log errors without leaking sensitive data to the user.
+- Add comprehensive docstrings to classes and complex functions.

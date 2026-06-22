@@ -1,0 +1,12 @@
+---
+description: Frontend Web UI rules
+globs: *.js, *.css, *.html
+---
+
+# Web UI Rules
+
+- Prioritize premium aesthetic designs (dark mode, glassmorphism, glowing accents).
+- Keep CSS clean and well-structured, grouped by component.
+- Do not use TailwindCSS unless explicitly requested; rely on Vanilla CSS.
+- Ensure all DOM manipulations and Three.js logic are well-commented and optimized for performance (minimize main-thread blocking).
+- Follow modern JavaScript best practices (ES6+).

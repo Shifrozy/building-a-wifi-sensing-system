@@ -36,6 +36,77 @@ let waves = [];
 let showWaves = true;
 let showGrid = true;
 
+// Custom Shader Materials
+let radarUniforms = {
+    time: { value: 0 },
+    routerPos: { value: new THREE.Vector3(CONFIG.router.x, CONFIG.router.y, CONFIG.router.z) },
+    waveSpeed: { value: CONFIG.waveSpeed },
+    waveSpacing: { value: CONFIG.waveMaxRadius / CONFIG.waveCount },
+    maxRadius: { value: CONFIG.waveMaxRadius },
+};
+
+const radarVertexShader = `
+    varying vec3 vWorldPosition;
+    varying vec3 vNormal;
+    void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    }
+`;
+
+const radarFragmentShader = `
+    uniform float time;
+    uniform vec3 routerPos;
+    uniform float waveSpeed;
+    uniform float waveSpacing;
+    uniform float maxRadius;
+    
+    uniform vec3 baseColor;
+    uniform float opacityMult;
+    uniform float isWireframe;
+    
+    varying vec3 vWorldPosition;
+    varying vec3 vNormal;
+    
+    void main() {
+        float dist = distance(vWorldPosition, routerPos);
+        if (dist > maxRadius) discard;
+        
+        // Calculate expanding waves
+        float wavePhase = mod(dist - time * waveSpeed, waveSpacing);
+        
+        // Ring thickness
+        float thickness = 0.2;
+        float ring = 0.0;
+        if (wavePhase > waveSpacing - thickness) {
+            ring = smoothstep(waveSpacing - thickness, waveSpacing, wavePhase);
+        }
+        
+        // Edge glow (Fresnel) for solid objects
+        float edgeGlow = 1.0;
+        if (isWireframe < 0.5) {
+            vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+            float fresnel = 1.0 - max(dot(viewDir, vNormal), 0.0);
+            edgeGlow = pow(fresnel, 2.0) + 0.2;
+        }
+        
+        // Fade out over distance
+        float fade = 1.0 - (dist / maxRadius);
+        
+        // Final alpha
+        float alpha = ring * fade * edgeGlow * opacityMult;
+        
+        if (alpha < 0.02) discard;
+        
+        // Add core glow
+        vec3 finalColor = baseColor + (baseColor * ring * 2.0);
+        
+        gl_FragColor = vec4(finalColor, min(alpha, 1.0));
+    }
+`;
+
 // Detection state
 let state = {
     connected: false,
@@ -148,37 +219,35 @@ function createRoom() {
     const { width, height, depth } = CONFIG.room;
     const hw = width / 2, hd = depth / 2;
 
+    // Base radar material factory
+    const createRadarMaterial = (color, isWireframe = false, opacity = 1.0) => {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                ...radarUniforms,
+                baseColor: { value: new THREE.Color(color) },
+                opacityMult: { value: opacity },
+                isWireframe: { value: isWireframe ? 1.0 : 0.0 }
+            },
+            vertexShader: radarVertexShader,
+            fragmentShader: radarFragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+    };
+
     // Floor
     const floorGeo = new THREE.PlaneGeometry(width, depth);
-    const floorMat = new THREE.MeshStandardMaterial({
-        color: 0x050510,
-        roughness: 0.9,
-        metalness: 0.1,
-        transparent: true,
-        opacity: 0.95,
-    });
+    const floorMat = createRadarMaterial(0x00c8ff, false, 0.4);
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
     roomGroup.add(floor);
 
-    // Wall material (transparent glass-like)
-    const wallMat = new THREE.MeshPhysicalMaterial({
-        color: 0x0a1830,
-        transparent: true,
-        opacity: 0.15,
-        roughness: 0.1,
-        metalness: 0.3,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-    });
-
-    // Wall edge material (glowing lines)
-    const edgeMat = new THREE.LineBasicMaterial({
-        color: 0x00c8ff,
-        transparent: true,
-        opacity: 0.3,
-    });
+    // Wall material
+    const wallMat = createRadarMaterial(0x00c8ff, false, 0.6);
+    // Wall edge material
+    const edgeMat = createRadarMaterial(0x00ffcc, true, 2.0);
 
     // Create 4 walls
     const walls = [
@@ -202,16 +271,6 @@ function createRoom() {
         edgeLine.rotation.copy(mesh.rotation);
         roomGroup.add(edgeLine);
     });
-
-    // Ceiling wireframe only
-    const ceilGeo = new THREE.PlaneGeometry(width, depth);
-    const ceilEdge = new THREE.EdgesGeometry(ceilGeo);
-    const ceilLine = new THREE.LineSegments(ceilEdge, new THREE.LineBasicMaterial({
-        color: 0x00c8ff, transparent: true, opacity: 0.1
-    }));
-    ceilLine.rotation.x = Math.PI / 2;
-    ceilLine.position.y = height;
-    roomGroup.add(ceilLine);
 
     scene.add(roomGroup);
 }
@@ -388,66 +447,55 @@ function createPerson() {
     personGroup.visible = false;
     scene.add(personGroup);
 
-    // Body (capsule-like shape using cylinder + spheres)
-    const bodyColor = 0xff3366;
+    const bodyColor = 0xff1144;
+
+    const createPersonRadarMaterial = (opacity = 1.5) => {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                ...radarUniforms,
+                baseColor: { value: new THREE.Color(bodyColor) },
+                opacityMult: { value: opacity },
+                isWireframe: { value: 0.0 }
+            },
+            vertexShader: radarVertexShader,
+            fragmentShader: radarFragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+    };
+
+    const torsoMat = createPersonRadarMaterial(2.0);
 
     // Torso
     const torsoGeo = new THREE.CylinderGeometry(0.2, 0.18, 0.7, 16);
-    const torsoMat = new THREE.MeshStandardMaterial({
-        color: bodyColor,
-        emissive: bodyColor,
-        emissiveIntensity: 0.4,
-        transparent: true,
-        opacity: 0.8,
-        metalness: 0.2,
-        roughness: 0.5,
-    });
     const torso = new THREE.Mesh(torsoGeo, torsoMat);
     torso.position.y = 1.1;
     personGroup.add(torso);
 
     // Head
     const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
-    const headMat = torsoMat.clone();
-    const head = new THREE.Mesh(headGeo, headMat);
+    const head = new THREE.Mesh(headGeo, torsoMat);
     head.position.y = 1.6;
     personGroup.add(head);
 
     // Legs
     const legGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.7, 8);
-    const legMat = torsoMat.clone();
-    legMat.opacity = 0.6;
-
     [-0.1, 0.1].forEach(offset => {
-        const leg = new THREE.Mesh(legGeo, legMat);
+        const leg = new THREE.Mesh(legGeo, torsoMat);
         leg.position.set(offset, 0.35, 0);
         personGroup.add(leg);
     });
 
     // Arms
     const armGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.55, 8);
-    const armMat = torsoMat.clone();
-    armMat.opacity = 0.6;
-
     [-0.28, 0.28].forEach(offset => {
-        const arm = new THREE.Mesh(armGeo, armMat);
+        const arm = new THREE.Mesh(armGeo, torsoMat);
         arm.position.set(offset, 1.05, 0);
         arm.rotation.z = offset > 0 ? -0.15 : 0.15;
         personGroup.add(arm);
     });
-
-    // Outer glow shell
-    const glowGeo = new THREE.CylinderGeometry(0.35, 0.3, 1.6, 16, 1, true);
-    const glowMat = new THREE.MeshBasicMaterial({
-        color: 0xff3366,
-        transparent: true,
-        opacity: 0.08,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-    });
-    personGlowMesh = new THREE.Mesh(glowGeo, glowMat);
-    personGlowMesh.position.y = 0.9;
-    personGroup.add(personGlowMesh);
 
     // Ground ring indicator
     const ringGeo = new THREE.RingGeometry(0.3, 0.35, 32);
@@ -457,11 +505,13 @@ function createPerson() {
         opacity: 0.3,
         side: THREE.DoubleSide,
         depthWrite: false,
+        blending: THREE.AdditiveBlending
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.02;
     personGroup.add(ring);
+    personGlowMesh = ring;
 
     personMesh = personGroup;
 }
@@ -480,18 +530,10 @@ function updatePerson(elapsed) {
 
     if (!personGroup.visible) return;
 
-    // Set opacity on all children
-    personGroup.traverse(child => {
-        if (child.material) {
-            if (child === personGlowMesh) {
-                child.material.opacity = 0.08 * state.personOpacity;
-            } else if (child.material.emissive) {
-                child.material.opacity = 0.8 * state.personOpacity;
-                // Pulse emissive
-                child.material.emissiveIntensity = 0.3 + Math.sin(elapsed * 4) * 0.15;
-            }
-        }
-    });
+    // Only manipulate the ground ring's opacity (personGlowMesh)
+    if (personGlowMesh && personGlowMesh.material) {
+        personGlowMesh.material.opacity = 0.3 * state.personOpacity;
+    }
 
     // Position — map normalized coords to room space
     const hw = CONFIG.room.width / 2;
@@ -522,11 +564,13 @@ function animate() {
     const delta = clock.getDelta();
     const elapsed = clock.getElapsedTime();
 
+    // Update global shader time for the radar pulse
+    radarUniforms.time.value = elapsed;
+
     // Update controls
     controls.update();
 
     // Animate elements
-    updateWaves(delta);
     updateSweep(elapsed);
     updatePerson(elapsed);
     updateRouter(elapsed);
