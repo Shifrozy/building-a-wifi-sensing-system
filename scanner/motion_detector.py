@@ -50,6 +50,7 @@ class MotionDetector:
         self.detection_confidence = 0.0
         self.last_motion_time = 0
         self.motion_decay = 3.0         # Seconds before motion fades
+        self.person_count = 0           # Estimated number of people (heuristic)
 
         # Signal data for visualization
         self.signal_data: list[dict] = []
@@ -157,6 +158,15 @@ class MotionDetector:
                     self.motion_intensity = min(1.0, max_variance / (self.motion_threshold * 3))
                     self.presence_detected = True
                     self.detection_confidence = min(1.0, (max_variance / self.motion_threshold) * 0.7)
+                    
+                    # Estimate person count based on heuristic
+                    if max_variance > self.motion_threshold * 4:
+                        self.person_count = 3
+                    elif max_variance > self.motion_threshold * 2:
+                        self.person_count = 2
+                    else:
+                        self.person_count = 1
+                        
                 elif avg_variance > self.presence_threshold:
                     self.presence_detected = True
                     self.motion_intensity = min(0.5, avg_variance / (self.motion_threshold * 2))
@@ -171,6 +181,8 @@ class MotionDetector:
                         self.presence_detected = False
                         self.motion_intensity = max(0, self.motion_intensity - 0.05)
                         self.detection_confidence = max(0, self.detection_confidence - 0.05)
+                        if self.motion_intensity < 0.1:
+                            self.person_count = 0
 
                 # Estimate person position from AP signal ratios
                 self._estimate_position(ap_variances)
@@ -222,6 +234,7 @@ class MotionDetector:
             "motion_intensity": round(self.motion_intensity, 3),
             "detection_confidence": round(self.detection_confidence, 3),
             "person_position": self.person_position,
+            "person_count": self.person_count,
             "signal_data": self.signal_data,
             "scan_count": self.scan_count,
             "baseline_ready": self.baseline_collected,
@@ -237,6 +250,7 @@ class MotionDetector:
             "motion_intensity": 0,
             "detection_confidence": 0,
             "person_position": {"x": 0, "z": 0},
+            "person_count": 0,
             "signal_data": [],
             "scan_count": self.scan_count,
             "baseline_ready": self.baseline_collected,
@@ -256,6 +270,7 @@ class MotionDetector:
             self.presence_detected = False
             self.motion_intensity = 0
             self.detection_confidence = 0
+            self.person_count = 0
 
     def get_status(self) -> dict:
         """Get current detector status."""

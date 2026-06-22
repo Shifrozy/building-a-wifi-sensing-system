@@ -79,6 +79,7 @@ def api_radar():
         "motion_intensity": 0,
         "detection_confidence": 0,
         "person_position": {"x": 0, "z": 0},
+        "person_count": 0,
         "signal_data": [],
         "scan_count": 0,
         "baseline_ready": False,

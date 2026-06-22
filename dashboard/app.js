@@ -28,9 +28,10 @@ const CONFIG = {
 // ═══════════════════════════════════════════════════════════════
 let scene, camera, renderer, controls;
 let clock, animationId;
-let roomGroup, wavesGroup, personGroup, sweepMesh;
+let roomGroup, wavesGroup, sweepMesh;
 let routerMesh, routerGlow;
-let personMesh, personGlowMesh;
+let persons = [];
+const MAX_PERSONS = 3;
 let floorGrid;
 let waves = [];
 let showWaves = true;
@@ -115,6 +116,7 @@ let state = {
     motionIntensity: 0,
     confidence: 0,
     personPos: { x: 0, z: 0 },
+    personCount: 0,
     signals: [],
     scanCount: 0,
     baselineReady: false,
@@ -443,10 +445,6 @@ function updateSweep(elapsed) {
 //  PERSON
 // ═══════════════════════════════════════════════════════════════
 function createPerson() {
-    personGroup = new THREE.Group();
-    personGroup.visible = false;
-    scene.add(personGroup);
-
     const bodyColor = 0xff1144;
 
     const createPersonRadarMaterial = (opacity = 1.5) => {
@@ -466,92 +464,105 @@ function createPerson() {
         });
     };
 
-    const torsoMat = createPersonRadarMaterial(2.0);
+    for (let i = 0; i < MAX_PERSONS; i++) {
+        const group = new THREE.Group();
+        group.visible = false;
+        scene.add(group);
 
-    // Torso
-    const torsoGeo = new THREE.CylinderGeometry(0.2, 0.18, 0.7, 16);
-    const torso = new THREE.Mesh(torsoGeo, torsoMat);
-    torso.position.y = 1.1;
-    personGroup.add(torso);
+        const torsoMat = createPersonRadarMaterial(2.0);
 
-    // Head
-    const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
-    const head = new THREE.Mesh(headGeo, torsoMat);
-    head.position.y = 1.6;
-    personGroup.add(head);
+        // Torso
+        const torsoGeo = new THREE.CylinderGeometry(0.2, 0.18, 0.7, 16);
+        const torso = new THREE.Mesh(torsoGeo, torsoMat);
+        torso.position.y = 1.1;
+        group.add(torso);
 
-    // Legs
-    const legGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.7, 8);
-    [-0.1, 0.1].forEach(offset => {
-        const leg = new THREE.Mesh(legGeo, torsoMat);
-        leg.position.set(offset, 0.35, 0);
-        personGroup.add(leg);
-    });
+        // Head
+        const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
+        const head = new THREE.Mesh(headGeo, torsoMat);
+        head.position.y = 1.6;
+        group.add(head);
 
-    // Arms
-    const armGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.55, 8);
-    [-0.28, 0.28].forEach(offset => {
-        const arm = new THREE.Mesh(armGeo, torsoMat);
-        arm.position.set(offset, 1.05, 0);
-        arm.rotation.z = offset > 0 ? -0.15 : 0.15;
-        personGroup.add(arm);
-    });
+        // Legs
+        const legGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.7, 8);
+        [-0.1, 0.1].forEach(offset => {
+            const leg = new THREE.Mesh(legGeo, torsoMat);
+            leg.position.set(offset, 0.35, 0);
+            group.add(leg);
+        });
 
-    // Ground ring indicator
-    const ringGeo = new THREE.RingGeometry(0.3, 0.35, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-        color: 0xff3366,
-        transparent: true,
-        opacity: 0.3,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.02;
-    personGroup.add(ring);
-    personGlowMesh = ring;
+        // Arms
+        const armGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.55, 8);
+        [-0.28, 0.28].forEach(offset => {
+            const arm = new THREE.Mesh(armGeo, torsoMat);
+            arm.position.set(offset, 1.05, 0);
+            arm.rotation.z = offset > 0 ? -0.15 : 0.15;
+            group.add(arm);
+        });
 
-    personMesh = personGroup;
+        // Ground ring indicator
+        const ringGeo = new THREE.RingGeometry(0.3, 0.35, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+            color: 0xff3366,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.02;
+        group.add(ring);
+
+        persons.push({
+            group: group,
+            glowMesh: ring,
+            opacity: 0,
+            offset: { x: (i - 1) * 0.4, z: (i % 2) * 0.4 - 0.2 } // Spread them out slightly
+        });
+    }
 }
 
 function updatePerson(elapsed) {
-    const targetVisible = state.motionDetected || state.presenceDetected;
-
-    // Smooth opacity transition
-    if (targetVisible) {
-        state.personOpacity = Math.min(1, state.personOpacity + 0.03);
-    } else {
-        state.personOpacity = Math.max(0, state.personOpacity - 0.01);
-    }
-
-    personGroup.visible = state.personOpacity > 0.01;
-
-    if (!personGroup.visible) return;
-
-    // Only manipulate the ground ring's opacity (personGlowMesh)
-    if (personGlowMesh && personGlowMesh.material) {
-        personGlowMesh.material.opacity = 0.3 * state.personOpacity;
-    }
-
-    // Position — map normalized coords to room space
     const hw = CONFIG.room.width / 2;
     const hd = CONFIG.room.depth / 2;
+    
+    // Base position
     const targetX = state.personPos.x * hw * 0.8;
     const targetZ = state.personPos.z * hd * 0.8;
 
-    // Smooth movement
-    personGroup.position.x += (targetX - personGroup.position.x) * 0.05;
-    personGroup.position.z += (targetZ - personGroup.position.z) * 0.05;
+    for (let i = 0; i < MAX_PERSONS; i++) {
+        const p = persons[i];
+        const isTargetVisible = (state.motionDetected || state.presenceDetected) && (i < state.personCount);
 
-    // Subtle breathing animation
-    const breathe = Math.sin(elapsed * 2) * 0.02;
-    personGroup.position.y = breathe;
+        // Smooth opacity transition
+        if (isTargetVisible) {
+            p.opacity = Math.min(1, p.opacity + 0.03);
+        } else {
+            p.opacity = Math.max(0, p.opacity - 0.01);
+        }
 
-    // Rotate glow
-    if (personGlowMesh) {
-        personGlowMesh.rotation.y += 0.01;
+        p.group.visible = p.opacity > 0.01;
+
+        if (!p.group.visible) continue;
+
+        // Only manipulate the ground ring's opacity
+        if (p.glowMesh && p.glowMesh.material) {
+            p.glowMesh.material.opacity = 0.3 * p.opacity;
+        }
+
+        // Apply spread offset to positions
+        const px = targetX + p.offset.x;
+        const pz = targetZ + p.offset.z;
+
+        // Smooth movement
+        p.group.position.x += (px - p.group.position.x) * 0.05;
+        p.group.position.z += (pz - p.group.position.z) * 0.05;
+
+        // Subtle breathing animation
+        const breathe = Math.sin(elapsed * 2 + i) * 0.02;
+        p.group.position.y = breathe;
     }
 }
 
@@ -619,6 +630,7 @@ async function fetchRadar() {
         state.motionIntensity = data.motion_intensity || 0;
         state.confidence = data.detection_confidence || 0;
         state.personPos = data.person_position || { x: 0, z: 0 };
+        state.personCount = data.person_count || 0;
         state.signals = data.signal_data || [];
         state.scanCount = data.scan_count || 0;
         state.baselineReady = data.baseline_ready || false;
@@ -629,11 +641,11 @@ async function fetchRadar() {
 
         // Log state changes
         if (state.motionDetected && !prevMotion) {
-            addLogEntry('motion', '🚨 MOTION DETECTED');
+            addLogEntry('motion', `🚨 MOTION DETECTED (${state.personCount} Person${state.personCount > 1 ? 's' : ''})`);
             showAlert(true);
         } else if (!state.motionDetected && prevMotion) {
             if (state.presenceDetected) {
-                addLogEntry('presence', '👤 Static presence');
+                addLogEntry('presence', `👤 Static presence (${state.personCount} Person${state.personCount > 1 ? 's' : ''})`);
             } else {
                 addLogEntry('clear', '✅ Area clear');
             }
